@@ -57,7 +57,7 @@ setup(
         'sympy',
         'tensorflow-datasets',
         'tensorflow-gan',
-        'tensorflow-probability',
+        'tensorflow-probability==0.7.0',
         'tqdm',
     ],
     extras_require={
