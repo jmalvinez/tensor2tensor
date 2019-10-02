@@ -37,6 +37,7 @@ setup(
         'dopamine-rl',
         'flask',
         'future',
+        'gast==0.2.2',
         'gevent',
         'gin-config',
         'google-api-python-client',
