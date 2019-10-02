@@ -1258,6 +1258,13 @@ def fast_decode(encoder_output,
 
   return {"outputs": decoded_ids, "scores": scores, "cache": cache}
 
+@registry.register_model
+class TransformerDecoder(Transformer):
+  """Transformer, decoder only."""
+
+  @property
+  def has_input(self):
+    return False
 
 @registry.register_model
 class TransformerScorer(Transformer):
