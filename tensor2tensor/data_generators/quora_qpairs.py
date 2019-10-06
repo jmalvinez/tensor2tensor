@@ -28,18 +28,31 @@ from tensor2tensor.data_generators import text_problems
 from tensor2tensor.utils import registry
 import tensorflow as tf
 
+# Link to data from GLUE: https://gluebenchmark.com/tasks
+_QQP_URL = ("https://firebasestorage.googleapis.com/v0/b/"
+            "mtl-sentence-representations.appspot.com/o/"
+            "data%2FQQP.zip?alt=media&token=700c6acf-160d-"
+            "4d89-81d1-de4191d02cb5")
+
 EOS = text_encoder.EOS
+
+
+def _maybe_download_corpora(tmp_dir):
+  qqp_filename = "QQP.zip"
+  qqp_finalpath = os.path.join(tmp_dir, "QQP")
+  if not tf.gfile.Exists(qqp_finalpath):
+    zip_filepath = generator_utils.maybe_download(
+        tmp_dir, qqp_filename, _QQP_URL)
+    zip_ref = zipfile.ZipFile(zip_filepath, "r")
+    zip_ref.extractall(tmp_dir)
+    zip_ref.close()
+
+  return qqp_finalpath
 
 
 @registry.register_problem
 class QuoraQuestionPairs(text_problems.TextConcat2ClassProblem):
   """Quora duplicate question pairs binary classification problems."""
-
-  # Link to data from GLUE: https://gluebenchmark.com/tasks
-  _QQP_URL = ("https://firebasestorage.googleapis.com/v0/b/"
-              "mtl-sentence-representations.appspot.com/o/"
-              "data%2FQQP.zip?alt=media&token=700c6acf-160d-"
-              "4d89-81d1-de4191d02cb5")
 
   @property
   def is_generate_per_split(self):
@@ -67,18 +80,6 @@ class QuoraQuestionPairs(text_problems.TextConcat2ClassProblem):
     del data_dir
     return ["not_duplicate", "duplicate"]
 
-  def _maybe_download_corpora(self, tmp_dir):
-    qqp_filename = "QQP.zip"
-    qqp_finalpath = os.path.join(tmp_dir, "QQP")
-    if not tf.gfile.Exists(qqp_finalpath):
-      zip_filepath = generator_utils.maybe_download(
-          tmp_dir, qqp_filename, self._QQP_URL)
-      zip_ref = zipfile.ZipFile(zip_filepath, "r")
-      zip_ref.extractall(tmp_dir)
-      zip_ref.close()
-
-    return qqp_finalpath
-
   def example_generator(self, filename):
     skipped = 0
     for idx, line in enumerate(tf.gfile.Open(filename, "rb")):
@@ -100,7 +101,7 @@ class QuoraQuestionPairs(text_problems.TextConcat2ClassProblem):
         }
 
   def generate_samples(self, data_dir, tmp_dir, dataset_split):
-    qqp_dir = self._maybe_download_corpora(tmp_dir)
+    qqp_dir = _maybe_download_corpora(tmp_dir)
     if dataset_split == problem.DatasetSplit.TRAIN:
       filesplit = "train.tsv"
     else:
@@ -121,3 +122,54 @@ class QuoraQuestionPairsCharacters(QuoraQuestionPairs):
 
   def global_task_id(self):
     return problem.TaskID.EN_SIM
+
+@registry.register_problem
+class QuoraQuestionPairsGenerateParaphrase(text_problems.Text2TextProblem):
+
+  @property
+  def is_generate_per_split(self):
+    return True
+
+  @property
+  def dataset_splits(self):
+    return [{
+        "split": problem.DatasetSplit.TRAIN,
+        "shards": 100,
+    }, {
+        "split": problem.DatasetSplit.EVAL,
+        "shards": 1,
+    }]
+
+  @property
+  def approx_vocab_size(self):
+    return 2**15
+
+  def example_generator(self, filename):
+    for idx, line in enumerate(tf.gfile.Open(filename, "rb")):
+      if idx == 0: continue  # skip header
+      line = text_encoder.to_unicode_utf8(line.strip())
+      split_line = line.split("\t")
+      if len(split_line) < 6:
+        continue
+      s1, s2, l = split_line[3:]
+      if l == "0":
+        continue
+      # A neat data augmentation trick from Radford et al. (2018)
+      # https://blog.openai.com/language-unsupervised/
+      inputs = [[s1, s2], [s2, s1]]
+      for inp in inputs:
+        yield {
+            "inputs": inp[0],
+            "targets": inp[1]
+        }
+
+  def generate_samples(self, data_dir, tmp_dir, dataset_split):
+    qqp_dir = _maybe_download_corpora(tmp_dir)
+    if dataset_split == problem.DatasetSplit.TRAIN:
+      filesplit = "train.tsv"
+    else:
+      filesplit = "dev.tsv"
+
+    filename = os.path.join(qqp_dir, filesplit)
+    for example in self.example_generator(filename):
+      yield example
