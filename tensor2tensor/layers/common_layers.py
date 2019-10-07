@@ -2927,13 +2927,17 @@ def list_product(els):
   return prod
 
 
-def sample_with_temperature(logits, temperature, sampling_keep_top_k=-1):
+def sample_with_temperature(logits,
+                            temperature,
+                            sampling_keep_top_k=-1,
+                            sampling_keep_top_p=0.0):
   """Either argmax or random sampling.
 
   Args:
     logits: a Tensor.
     temperature: a float  0.0=argmax 1.0=random
     sampling_keep_top_k: If not -1, only sample from the top k logits.
+    sampling_keep_top_p: If not 0.0, only sample from the top p logits.
   Returns:
     a Tensor with one fewer dimension than logits.
   """
@@ -2959,6 +2963,44 @@ def sample_with_temperature(logits, temperature, sampling_keep_top_k=-1):
       # 0 by setting the logit to be very negative.
       logits = tf.where(tf.less_equal(logits, k_largest),
                         tf.ones_like(logits)*-1e6, logits)
+
+    if sampling_keep_top_p != 0.0:
+      if sampling_keep_top_p <= 0.0 or sampling_keep_top_p > 1.0:
+        raise ValueError("sampling_keep_top_p must between 0.0 and 1.0.")
+
+      logits_shape = shape_list(logits)
+      vocab_size = shape_list(logits)[1]
+
+      sorted_logits = tf.sort(logits, direction="DESCENDING")
+
+      sorted_indices_i = tf.tile(
+          tf.reshape(tf.range(logits_shape[0]), [-1,1]), [1, vocab_size])
+      sorted_indices_j = tf.argsort(logits, direction="DESCENDING")
+      sorted_indices = tf.stack([sorted_indices_i, sorted_indices_j], axis=-1)
+
+      cumulative_probs = tf.cumsum(tf.nn.softmax(sorted_logits), axis=-1)
+
+      # Remove tokens with cumulative probability above the threshold
+      sorted_indices_to_remove = cumulative_probs > sampling_keep_top_p
+
+      # Shift the indices to the right to keep also the first token above the threshold
+      # indices = tf.range(1, vocab_size, 1)
+      # sorted_indices_to_remove = tf.scatter_nd(
+      #     tf.expand_dims(indices, 0), sorted_indices_to_remove[..., :-1], shape_list(logits))
+      indices_i, indices_j = tf.meshgrid(
+          tf.range(logits_shape[0]), tf.range(1, vocab_size, 1), indexing='ij')
+      indices = tf.stack([indices_i, indices_j], axis=-1)
+      sorted_indices_to_remove = tf.scatter_nd(
+          indices, sorted_indices_to_remove[..., :-1], logits_shape)
+
+      indices_to_remove = tf.boolean_mask(sorted_indices, sorted_indices_to_remove)
+      update_bool = tf.ones(shape_list(indices_to_remove)[0], dtype=tf.bool)
+      remove_cond = tf.scatter_nd(
+          indices_to_remove, update_bool, logits_shape)
+
+      # Force every position that is not in the top p to have probability near
+      # 0 by setting the logit to be very negative.
+      logits = tf.where(remove_cond, tf.ones_like(logits)*-1e6, logits)
 
     reshaped_logits = (
         tf.reshape(logits, [-1, shape_list(logits)[-1]]) / temperature)
