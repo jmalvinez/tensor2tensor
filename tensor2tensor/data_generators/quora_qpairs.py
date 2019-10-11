@@ -173,3 +173,53 @@ class QuoraQuestionPairsGenerateParaphrase(text_problems.Text2TextProblem):
     filename = os.path.join(qqp_dir, filesplit)
     for example in self.example_generator(filename):
       yield example
+
+@registry.register_problem
+class QuoraQuestionPairsLmGenerateParaphrase(text_problems.Text2SelfProblem):
+
+  @property
+  def is_generate_per_split(self):
+    return True
+
+  @property
+  def dataset_splits(self):
+    return [{
+        "split": problem.DatasetSplit.TRAIN,
+        "shards": 100,
+    }, {
+        "split": problem.DatasetSplit.EVAL,
+        "shards": 1,
+    }]
+
+  @property
+  def approx_vocab_size(self):
+    return 2**15
+
+  def example_generator(self, filename):
+    for idx, line in enumerate(tf.gfile.Open(filename, "rb")):
+      if idx == 0: continue  # skip header
+      line = text_encoder.to_unicode_utf8(line.strip())
+      split_line = line.split("\t")
+      if len(split_line) < 6:
+        continue
+      s1, s2, l = split_line[3:]
+      if l == "0":
+        continue
+      # A neat data augmentation trick from Radford et al. (2018)
+      # https://blog.openai.com/language-unsupervised/
+      inputs = [[s1, s2], [s2, s1]]
+      for inp in inputs:
+        yield {
+            "targets": inp[0] + inp[1]
+        }
+
+  def generate_samples(self, data_dir, tmp_dir, dataset_split):
+    qqp_dir = _maybe_download_corpora(tmp_dir)
+    if dataset_split == problem.DatasetSplit.TRAIN:
+      filesplit = "train.tsv"
+    else:
+      filesplit = "dev.tsv"
+
+    filename = os.path.join(qqp_dir, filesplit)
+    for example in self.example_generator(filename):
+      yield example
