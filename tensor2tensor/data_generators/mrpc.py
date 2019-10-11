@@ -196,3 +196,65 @@ class MSRParaphraseCorpusGenerateParaphrase(text_problems.Text2TextProblem):
     filename = os.path.join(mrpc_dir, filesplit)
     for example in self.example_generator(filename, dev_ids, dataset_split):
       yield example
+
+
+@registry.register_problem
+class MSRParaphraseCorpusLmGenerateParaphrase(text_problems.Text2SelfProblem):
+
+  @property
+  def is_generate_per_split(self):
+    return True
+
+  @property
+  def dataset_splits(self):
+    return [{
+        "split": problem.DatasetSplit.TRAIN,
+        "shards": 10,
+    }, {
+        "split": problem.DatasetSplit.EVAL,
+        "shards": 1,
+    }, {
+        "split": problem.DatasetSplit.TEST,
+        "shards": 1,
+    }]
+
+  @property
+  def approx_vocab_size(self):
+    return 2**13
+
+  def example_generator(self, filename, dev_ids, dataset_split):
+    for idx, line in enumerate(tf.gfile.Open(filename, "rb")):
+      if idx == 0: continue  # skip header
+      line = text_encoder.to_unicode_utf8(line.strip())
+      split_line = line.split("\t")
+      if len(split_line) < 5:
+        continue
+      l, id1, id2, s1, s2 = split_line
+      if l == "0":
+        continue
+      is_dev = [id1, id2] in dev_ids
+      if dataset_split == problem.DatasetSplit.TRAIN and is_dev:
+        continue
+      if dataset_split == problem.DatasetSplit.EVAL and not is_dev:
+        continue
+      inputs = [[s1, s2], [s2, s1]]
+      for inp in inputs:
+        yield {
+            "targets": inp[0] + inp[1]
+        }
+
+
+  def generate_samples(self, data_dir, tmp_dir, dataset_split):
+    mrpc_dir = _maybe_download_corpora(tmp_dir)
+    if dataset_split != problem.DatasetSplit.TEST:
+      filesplit = "msr_paraphrase_train.txt"
+    else:
+      filesplit = "msr_paraphrase_test.txt"
+    dev_ids = []
+    if dataset_split != problem.DatasetSplit.TEST:
+      for row in tf.gfile.Open(os.path.join(mrpc_dir, "dev_ids.tsv")):
+        dev_ids.append(row.strip().split("\t"))
+
+    filename = os.path.join(mrpc_dir, filesplit)
+    for example in self.example_generator(filename, dev_ids, dataset_split):
+      yield example
