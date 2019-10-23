@@ -41,8 +41,8 @@ def write_to_file(filename, data):
 
 
 def prep_data(decode_dir, target_dir):
-  with open(FLAGS.decodes_filename, "rb") as fdecodes:
-    with open(FLAGS.targets_filename, "rb") as ftargets:
+  with open(FLAGS.decodes_filename, "r") as fdecodes:
+    with open(FLAGS.targets_filename, "r") as ftargets:
       for i, (d, t) in enumerate(zip(fdecodes, ftargets)):
         write_to_file(os.path.join(decode_dir, "rouge.%06d.txt" % (i+1)), d)
         write_to_file(os.path.join(target_dir, "rouge.A.%06d.txt" % (i+1)), t)
