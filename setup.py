@@ -30,6 +30,7 @@ setup(
         'tensor2tensor/bin/t2t-insights-server',
         'tensor2tensor/bin/t2t-avg-all',
         'tensor2tensor/bin/t2t-bleu',
+        'tensor2tensor/bin/t2t-rouge',
         'tensor2tensor/bin/t2t-translate-all',
     ],
     install_requires=[
